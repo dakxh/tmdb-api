@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metadata Generator</title>
+    <style>
+        :root {
+            --bg-color: #0f0f0f;
+            --surface-color: #1a1a1a;
+            --border-color: #333;
+            --text-main: #f1f1f1;
+            --text-muted: #888;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 2rem;
+            line-height: 1.5;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        h1, h2, h3 { font-weight: 600; margin-top: 0; }
+        .card {
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 1rem;
+        }
+        input, select {
+            flex: 1;
+            padding: 10px 12px;
+            background-color: var(--bg-color);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+        input:focus, select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        button {
+            padding: 10px 20px;
+            background-color: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover { background-color: var(--accent-hover); }
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .result-item {
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 10px;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .result-item:hover { border-color: var(--accent); }
+        .result-title { font-weight: 600; margin-bottom: 5px; }
+        .result-meta { font-size: 0.85rem; color: var(--text-muted); }
+        .json-block {
+            background-color: #000;
+            border: 1px solid var(--border-color);
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-family: monospace;
+            font-size: 0.9rem;
+            color: #10b981;
+            margin-bottom: 15px;
+        }
+        .json-header {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="card">
+        <h2>TMDB Setup & Search</h2>
+        <div class="input-group">
+            <input type="password" id="apiKey" placeholder="Paste TMDB API Key here..." autocomplete="off">
+        </div>
+        <div class="input-group">
+            <input type="text" id="searchQuery" placeholder="Search for a movie or TV series..." onkeypress="if(event.key === 'Enter') searchTMDB()">
+            <button onclick="searchTMDB()">Search</button>
+        </div>
+    </div>
+
+    <div id="resultsContainer" class="card hidden">
+        <h3>Search Results</h3>
+        <div id="resultsGrid" class="results-grid"></div>
+    </div>
+
+    <div id="tvControls" class="card hidden">
+        <h3>Season Selection</h3>
+        <p class="result-meta" id="tvTitleDisplay"></p>
+        <div class="input-group" style="margin-top: 10px;">
+            <select id="seasonPicker" onchange="generateSeriesMetadata()"></select>
+        </div>
+    </div>
+
+    <div id="outputContainer" class="hidden">
+        </div>
+</div>
+
+<script>
+    const API_BASE = 'https://api.themoviedb.org/3';
+    const IMG_POSTER = 'https://image.tmdb.org/t/p/w600_and_h900_bestv2';
+    const IMG_BACKDROP = 'https://image.tmdb.org/t/p/w1280_and_h720_multi_faces';
+    
+    let activeItem = null;
+
+    async function searchTMDB() {
+        const key = document.getElementById('apiKey').value.trim();
+        const query = document.getElementById('searchQuery').value.trim();
+        if (!key || !query) return alert("Please enter both an API Key and a Search Query.");
+
+        const res = await fetch(`${API_BASE}/search/multi?api_key=${key}&query=${encodeURIComponent(query)}`);
+        const data = await res.json();
+        
+        const grid = document.getElementById('resultsGrid');
+        grid.innerHTML = '';
+        
+        // Filter out actors/people, keep only movies and tv
+        const items = data.results.filter(i => i.media_type === 'movie' || i.media_type === 'tv');
+        
+        if (items.length === 0) {
+            grid.innerHTML = '<p class="result-meta">No movies or series found.</p>';
+        }
+
+        items.forEach(item => {
+            const el = document.createElement('div');
+            el.className = 'result-item';
+            const title = item.media_type === 'movie' ? item.title : item.name;
+            const date = item.media_type === 'movie' ? item.release_date : item.first_air_date;
+            const year = date ? date.substring(0, 4) : 'Unknown Year';
+            
+            el.innerHTML = `
+                <div class="result-title">${title}</div>
+                <div class="result-meta">${item.media_type.toUpperCase()} • ${year}</div>
+            `;
+            el.onclick = () => selectItem(item);
+            grid.appendChild(el);
+        });
+
+        document.getElementById('resultsContainer').classList.remove('hidden');
+        document.getElementById('tvControls').classList.add('hidden');
+        document.getElementById('outputContainer').classList.add('hidden');
+    }
+
+    async function selectItem(item) {
+        const key = document.getElementById('apiKey').value.trim();
+        activeItem = item;
+        
+        document.getElementById('outputContainer').innerHTML = '';
+        document.getElementById('outputContainer').classList.remove('hidden');
+
+        if (item.media_type === 'movie') {
+            document.getElementById('tvControls').classList.add('hidden');
+            
+            const movieMeta = {
+                title: item.title || "Unknown Title",
+                year: item.release_date ? item.release_date.substring(0, 4) : "",
+                rating: item.vote_average ? parseFloat(item.vote_average.toFixed(1)) : 0.0,
+                poster_url: item.poster_path ? `${IMG_POSTER}${item.poster_path}` : "",
+                backdrop_url: item.backdrop_path ? `${IMG_BACKDROP}${item.backdrop_path}` : "",
+                overview: item.overview || ""
+            };
+            
+            renderJSON("Movie Metadata (metadata.json)", movieMeta);
+        } 
+        else if (item.media_type === 'tv') {
+            // Fetch TV details to get seasons
+            const res = await fetch(`${API_BASE}/tv/${item.id}?api_key=${key}`);
+            const tvData = await res.json();
+            
+            activeItem.detailedData = tvData; // Store for later use
+            
+            document.getElementById('tvTitleDisplay').innerText = `Selected: ${tvData.name}`;
+            const picker = document.getElementById('seasonPicker');
+            picker.innerHTML = '<option value="" disabled selected>Select a season...</option>';
+            
+            // Populate season dropdown (ignoring 'Specials' usually season 0, unless desired)
+            tvData.seasons.forEach(s => {
+                if (s.season_number > 0) {
+                    const opt = document.createElement('option');
+                    opt.value = s.season_number;
+                    opt.innerText = `Season ${s.season_number} (${s.episode_count} Episodes)`;
+                    picker.appendChild(opt);
+                }
+            });
+
+            document.getElementById('tvControls').classList.remove('hidden');
+        }
+    }
+
+    async function generateSeriesMetadata() {
+        const key = document.getElementById('apiKey').value.trim();
+        const seasonNum = document.getElementById('seasonPicker').value;
+        if (!seasonNum) return;
+
+        const tv = activeItem.detailedData;
+        const outContainer = document.getElementById('outputContainer');
+        outContainer.innerHTML = ''; // Clear previous
+
+        // 1. Generate Series Master Profile
+        const seriesMeta = {
+            title: tv.name || "Unknown Series",
+            year: tv.first_air_date ? tv.first_air_date.substring(0, 4) : "",
+            rating: tv.vote_average ? parseFloat(tv.vote_average.toFixed(1)) : 0.0,
+            poster_url: tv.poster_path ? `${IMG_POSTER}${tv.poster_path}` : "",
+            backdrop_url: tv.backdrop_path ? `${IMG_BACKDROP}${tv.backdrop_path}` : "",
+            overview: tv.overview || ""
+        };
+        renderJSON(`Series Master Profile (Season ${seasonNum})`, seriesMeta);
+
+        // 2. Fetch specific season to get episodes
+        const res = await fetch(`${API_BASE}/tv/${tv.id}/season/${seasonNum}?api_key=${key}`);
+        const seasonData = await res.json();
+
+        // 3. Generate Individual Episode Profiles
+        if (seasonData.episodes && seasonData.episodes.length > 0) {
+            seasonData.episodes.forEach(ep => {
+                const epMeta = {
+                    series_title: tv.name,
+                    season_number: ep.season_number,
+                    episode_number: ep.episode_number,
+                    episode_name: ep.name || `Episode ${ep.episode_number}`
+                };
+                renderJSON(`Episode ${ep.episode_number} Profile`, epMeta);
+            });
+        }
+    }
+
+    function renderJSON(label, data) {
+        const outContainer = document.getElementById('outputContainer');
+        
+        const wrapper = document.createElement('div');
+        wrapper.className = 'json-wrapper';
+        
+        const header = document.createElement('div');
+        header.className = 'json-header';
+        header.innerText = label;
+        
+        const block = document.createElement('pre');
+        block.className = 'json-block';
+        block.innerText = JSON.stringify(data, null, 4);
+        
+        wrapper.appendChild(header);
+        wrapper.appendChild(block);
+        outContainer.appendChild(wrapper);
+    }
+</script>
+</body>
+</html>
