@@ -22,10 +22,7 @@
             padding: 2rem;
             line-height: 1.5;
         }
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-        }
+        .container { max-width: 900px; margin: 0 auto; }
         h1, h2, h3 { font-weight: 600; margin-top: 0; }
         .card {
             background-color: var(--surface-color);
@@ -34,70 +31,51 @@
             padding: 1.5rem;
             margin-bottom: 1.5rem;
         }
-        .input-group {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 1rem;
-        }
+        .input-group { display: flex; gap: 10px; margin-bottom: 1rem; }
         input, select {
-            flex: 1;
-            padding: 10px 12px;
-            background-color: var(--bg-color);
-            border: 1px solid var(--border-color);
-            color: var(--text-main);
-            border-radius: 6px;
-            font-size: 1rem;
+            flex: 1; padding: 10px 12px;
+            background-color: var(--bg-color); border: 1px solid var(--border-color);
+            color: var(--text-main); border-radius: 6px; font-size: 1rem;
         }
-        input:focus, select:focus {
-            outline: none;
-            border-color: var(--accent);
+        input:focus, select:focus { outline: none; border-color: var(--accent); }
+        button.primary-btn {
+            padding: 10px 20px; background-color: var(--accent); color: white;
+            border: none; border-radius: 6px; font-size: 1rem;
+            cursor: pointer; transition: background-color 0.2s;
         }
-        button {
-            padding: 10px 20px;
-            background-color: var(--accent);
-            color: white;
-            border: none;
-            border-radius: 6px;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-        button:hover { background-color: var(--accent-hover); }
+        button.primary-btn:hover { background-color: var(--accent-hover); }
         .results-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 15px;
-            margin-top: 15px;
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px; margin-top: 15px;
         }
         .result-item {
-            background-color: var(--surface-color);
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            padding: 10px;
-            cursor: pointer;
-            transition: border-color 0.2s;
+            background-color: var(--surface-color); border: 1px solid var(--border-color);
+            border-radius: 6px; padding: 10px; cursor: pointer; transition: border-color 0.2s;
         }
         .result-item:hover { border-color: var(--accent); }
         .result-title { font-weight: 600; margin-bottom: 5px; }
         .result-meta { font-size: 0.85rem; color: var(--text-muted); }
+        
+        /* Custom JSON Renderer Styles */
         .json-block {
-            background-color: #000;
-            border: 1px solid var(--border-color);
-            padding: 15px;
-            border-radius: 6px;
-            overflow-x: auto;
-            font-family: monospace;
-            font-size: 0.9rem;
-            color: #10b981;
-            margin-bottom: 15px;
+            background-color: #000; border: 1px solid var(--border-color);
+            padding: 15px; border-radius: 6px; overflow-x: auto;
+            font-family: monospace; font-size: 0.95rem; color: #e5e5e5;
+            margin-bottom: 15px; line-height: 1.6;
         }
         .json-header {
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            margin-bottom: 8px;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
+            font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;
+            text-transform: uppercase; letter-spacing: 0.05em;
         }
+        .json-key { color: #9cdcfe; }
+        .json-string { color: #ce9178; }
+        .json-number { color: #b5cea8; }
+        .copy-inline-btn {
+            background: none; border: none; cursor: pointer; padding: 0;
+            margin-left: 12px; font-size: 1.1rem; opacity: 0.6; transition: opacity 0.2s;
+            vertical-align: middle;
+        }
+        .copy-inline-btn:hover { opacity: 1; }
         .hidden { display: none; }
     </style>
 </head>
@@ -111,7 +89,7 @@
         </div>
         <div class="input-group">
             <input type="text" id="searchQuery" placeholder="Search for a movie or TV series..." onkeypress="if(event.key === 'Enter') searchTMDB()">
-            <button onclick="searchTMDB()">Search</button>
+            <button class="primary-btn" onclick="searchTMDB()">Search</button>
         </div>
     </div>
 
@@ -128,8 +106,7 @@
         </div>
     </div>
 
-    <div id="outputContainer" class="hidden">
-        </div>
+    <div id="outputContainer" class="hidden"></div>
 </div>
 
 <script>
@@ -150,7 +127,6 @@
         const grid = document.getElementById('resultsGrid');
         grid.innerHTML = '';
         
-        // Filter out actors/people, keep only movies and tv
         const items = data.results.filter(i => i.media_type === 'movie' || i.media_type === 'tv');
         
         if (items.length === 0) {
@@ -196,20 +172,18 @@
                 overview: item.overview || ""
             };
             
-            renderJSON("Movie Metadata (metadata.json)", movieMeta);
+            renderInteractiveJSON("Movie Metadata (metadata.json)", movieMeta);
         } 
         else if (item.media_type === 'tv') {
-            // Fetch TV details to get seasons
             const res = await fetch(`${API_BASE}/tv/${item.id}?api_key=${key}`);
             const tvData = await res.json();
             
-            activeItem.detailedData = tvData; // Store for later use
+            activeItem.detailedData = tvData; 
             
             document.getElementById('tvTitleDisplay').innerText = `Selected: ${tvData.name}`;
             const picker = document.getElementById('seasonPicker');
             picker.innerHTML = '<option value="" disabled selected>Select a season...</option>';
             
-            // Populate season dropdown (ignoring 'Specials' usually season 0, unless desired)
             tvData.seasons.forEach(s => {
                 if (s.season_number > 0) {
                     const opt = document.createElement('option');
@@ -230,9 +204,8 @@
 
         const tv = activeItem.detailedData;
         const outContainer = document.getElementById('outputContainer');
-        outContainer.innerHTML = ''; // Clear previous
+        outContainer.innerHTML = ''; 
 
-        // 1. Generate Series Master Profile
         const seriesMeta = {
             title: tv.name || "Unknown Series",
             year: tv.first_air_date ? tv.first_air_date.substring(0, 4) : "",
@@ -241,13 +214,11 @@
             backdrop_url: tv.backdrop_path ? `${IMG_BACKDROP}${tv.backdrop_path}` : "",
             overview: tv.overview || ""
         };
-        renderJSON(`Series Master Profile (Season ${seasonNum})`, seriesMeta);
+        renderInteractiveJSON(`Series Master Profile (Season ${seasonNum})`, seriesMeta);
 
-        // 2. Fetch specific season to get episodes
         const res = await fetch(`${API_BASE}/tv/${tv.id}/season/${seasonNum}?api_key=${key}`);
         const seasonData = await res.json();
 
-        // 3. Generate Individual Episode Profiles
         if (seasonData.episodes && seasonData.episodes.length > 0) {
             seasonData.episodes.forEach(ep => {
                 const epMeta = {
@@ -256,12 +227,13 @@
                     episode_number: ep.episode_number,
                     episode_name: ep.name || `Episode ${ep.episode_number}`
                 };
-                renderJSON(`Episode ${ep.episode_number} Profile`, epMeta);
+                renderInteractiveJSON(`Episode ${ep.episode_number} Profile`, epMeta);
             });
         }
     }
 
-    function renderJSON(label, data) {
+    // New custom JSON builder with inline copy buttons
+    function renderInteractiveJSON(label, data) {
         const outContainer = document.getElementById('outputContainer');
         
         const wrapper = document.createElement('div');
@@ -273,7 +245,49 @@
         
         const block = document.createElement('pre');
         block.className = 'json-block';
-        block.innerText = JSON.stringify(data, null, 4);
+        
+        block.appendChild(document.createTextNode('{\n'));
+        
+        const entries = Object.entries(data);
+        entries.forEach(([key, val], index) => {
+            const isLast = index === entries.length - 1;
+            
+            const lineSpan = document.createElement('span');
+            lineSpan.appendChild(document.createTextNode(`    "`));
+            
+            const keySpan = document.createElement('span');
+            keySpan.className = 'json-key';
+            keySpan.innerText = key;
+            lineSpan.appendChild(keySpan);
+            
+            lineSpan.appendChild(document.createTextNode(`": `));
+            
+            const valSpan = document.createElement('span');
+            const isString = typeof val === 'string';
+            valSpan.className = isString ? 'json-string' : 'json-number';
+            valSpan.innerText = isString ? `"${val}"` : val;
+            lineSpan.appendChild(valSpan);
+            
+            lineSpan.appendChild(document.createTextNode(isLast ? '' : ','));
+            
+            // Generate the magic copy button
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'copy-inline-btn';
+            copyBtn.innerText = '📋';
+            copyBtn.title = 'Copy value (without quotes)';
+            copyBtn.onclick = () => {
+                navigator.clipboard.writeText(val).then(() => {
+                    copyBtn.innerText = '✅';
+                    setTimeout(() => { copyBtn.innerText = '📋'; }, 1500);
+                });
+            };
+            lineSpan.appendChild(copyBtn);
+            lineSpan.appendChild(document.createTextNode('\n'));
+            
+            block.appendChild(lineSpan);
+        });
+        
+        block.appendChild(document.createTextNode('}'));
         
         wrapper.appendChild(header);
         wrapper.appendChild(block);
