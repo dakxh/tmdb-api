@@ -85,7 +85,7 @@
     <div class="card">
         <h2>TMDB Setup & Search</h2>
         <div class="input-group">
-            <input type="password" id="apiKey" placeholder="Paste TMDB API Key here..." autocomplete="off">
+            <input type="password" id="apiKey" placeholder="Paste TMDB API Key here (It will save automatically!)" autocomplete="off">
         </div>
         <div class="input-group">
             <input type="text" id="searchQuery" placeholder="Search for a movie or TV series..." onkeypress="if(event.key === 'Enter') searchTMDB()">
@@ -116,10 +116,21 @@
     
     let activeItem = null;
 
+    // --- NEW: Load the saved key instantly when the page opens ---
+    document.addEventListener("DOMContentLoaded", () => {
+        const savedKey = localStorage.getItem('tmdb_api_key_saved');
+        if (savedKey) {
+            document.getElementById('apiKey').value = savedKey;
+        }
+    });
+
     async function searchTMDB() {
         const key = document.getElementById('apiKey').value.trim();
         const query = document.getElementById('searchQuery').value.trim();
         if (!key || !query) return alert("Please enter both an API Key and a Search Query.");
+
+        // --- NEW: Save the key to local browser storage so you never have to paste it again ---
+        localStorage.setItem('tmdb_api_key_saved', key);
 
         const res = await fetch(`${API_BASE}/search/multi?api_key=${key}&query=${encodeURIComponent(query)}`);
         const data = await res.json();
@@ -232,7 +243,6 @@
         }
     }
 
-    // New custom JSON builder with inline copy buttons
     function renderInteractiveJSON(label, data) {
         const outContainer = document.getElementById('outputContainer');
         
@@ -270,7 +280,6 @@
             
             lineSpan.appendChild(document.createTextNode(isLast ? '' : ','));
             
-            // Generate the magic copy button
             const copyBtn = document.createElement('button');
             copyBtn.className = 'copy-inline-btn';
             copyBtn.innerText = '📋';
