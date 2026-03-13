@@ -13,6 +13,7 @@
             --text-muted: #888;
             --accent: #3b82f6;
             --accent-hover: #2563eb;
+            --anime-accent: #f472b6;
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -31,12 +32,13 @@
             padding: 1.5rem;
             margin-bottom: 1.5rem;
         }
-        .input-group { display: flex; gap: 10px; margin-bottom: 1rem; }
+        .input-group { display: flex; gap: 10px; margin-bottom: 1rem; align-items: center; }
         input, select {
             flex: 1; padding: 10px 12px;
             background-color: var(--bg-color); border: 1px solid var(--border-color);
             color: var(--text-main); border-radius: 6px; font-size: 1rem;
         }
+        select.pipeline-select { flex: 0 0 250px; border-color: var(--accent); }
         input:focus, select:focus { outline: none; border-color: var(--accent); }
         button.primary-btn {
             padding: 10px 20px; background-color: var(--accent); color: white;
@@ -65,11 +67,18 @@
         }
         .json-header {
             font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;
-            text-transform: uppercase; letter-spacing: 0.05em;
+            text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;
+            display: flex; justify-content: space-between;
         }
+        .json-header.catalog { color: #facc15; }
+        .json-header.metadata { color: #38bdf8; }
+        .json-header.anime { color: var(--anime-accent); }
+        
         .json-key { color: #9cdcfe; }
         .json-string { color: #ce9178; }
         .json-number { color: #b5cea8; }
+        .json-boolean { color: #569cd6; }
+        
         .copy-inline-btn {
             background: none; border: none; cursor: pointer; padding: 0;
             margin-left: 12px; font-size: 1.1rem; opacity: 0.6; transition: opacity 0.2s;
@@ -88,6 +97,10 @@
             <input type="password" id="apiKey" placeholder="Paste TMDB API Key here (It will save automatically!)" autocomplete="off">
         </div>
         <div class="input-group">
+            <select id="pipelineMode" class="pipeline-select" onchange="handlePipelineChange()">
+                <option value="main3">🎬 Standard Pipeline (main3.yml)</option>
+                <option value="main4">🌸 Anime Pipeline (main4.yml)</option>
+            </select>
             <input type="text" id="searchQuery" placeholder="Search for a movie or TV series..." onkeypress="if(event.key === 'Enter') searchTMDB()">
             <button class="primary-btn" onclick="searchTMDB()">Search</button>
         </div>
@@ -102,7 +115,7 @@
         <h3>Season Selection</h3>
         <p class="result-meta" id="tvTitleDisplay"></p>
         <div class="input-group" style="margin-top: 10px;">
-            <select id="seasonPicker" onchange="generateSeriesMetadata()"></select>
+            <select id="seasonPicker" onchange="generateOutputs()"></select>
         </div>
     </div>
 
@@ -116,20 +129,29 @@
     
     let activeItem = null;
 
-    // --- NEW: Load the saved key instantly when the page opens ---
     document.addEventListener("DOMContentLoaded", () => {
         const savedKey = localStorage.getItem('tmdb_api_key_saved');
-        if (savedKey) {
-            document.getElementById('apiKey').value = savedKey;
-        }
+        if (savedKey) document.getElementById('apiKey').value = savedKey;
+        
+        const savedPipeline = localStorage.getItem('pipeline_mode_saved');
+        if (savedPipeline) document.getElementById('pipelineMode').value = savedPipeline;
     });
+
+    function handlePipelineChange() {
+        const mode = document.getElementById('pipelineMode').value;
+        localStorage.setItem('pipeline_mode_saved', mode);
+        if (activeItem && activeItem.media_type === 'movie') {
+            generateOutputs(); // Refresh if movie is already selected
+        } else if (activeItem && activeItem.media_type === 'tv' && document.getElementById('seasonPicker').value) {
+            generateOutputs(); // Refresh if season is selected
+        }
+    }
 
     async function searchTMDB() {
         const key = document.getElementById('apiKey').value.trim();
         const query = document.getElementById('searchQuery').value.trim();
         if (!key || !query) return alert("Please enter both an API Key and a Search Query.");
 
-        // --- NEW: Save the key to local browser storage so you never have to paste it again ---
         localStorage.setItem('tmdb_api_key_saved', key);
 
         const res = await fetch(`${API_BASE}/search/multi?api_key=${key}&query=${encodeURIComponent(query)}`);
@@ -140,9 +162,7 @@
         
         const items = data.results.filter(i => i.media_type === 'movie' || i.media_type === 'tv');
         
-        if (items.length === 0) {
-            grid.innerHTML = '<p class="result-meta">No movies or series found.</p>';
-        }
+        if (items.length === 0) grid.innerHTML = '<p class="result-meta">No movies or series found.</p>';
 
         items.forEach(item => {
             const el = document.createElement('div');
@@ -173,17 +193,7 @@
 
         if (item.media_type === 'movie') {
             document.getElementById('tvControls').classList.add('hidden');
-            
-            const movieMeta = {
-                title: item.title || "Unknown Title",
-                year: item.release_date ? item.release_date.substring(0, 4) : "",
-                rating: item.vote_average ? parseFloat(item.vote_average.toFixed(1)) : 0.0,
-                poster_url: item.poster_path ? `${IMG_POSTER}${item.poster_path}` : "",
-                backdrop_url: item.backdrop_path ? `${IMG_BACKDROP}${item.backdrop_path}` : "",
-                overview: item.overview || ""
-            };
-            
-            renderInteractiveJSON("Movie Metadata (metadata.json)", movieMeta);
+            generateOutputs(); 
         } 
         else if (item.media_type === 'tv') {
             const res = await fetch(`${API_BASE}/tv/${item.id}?api_key=${key}`);
@@ -208,95 +218,284 @@
         }
     }
 
-    async function generateSeriesMetadata() {
-        const key = document.getElementById('apiKey').value.trim();
-        const seasonNum = document.getElementById('seasonPicker').value;
-        if (!seasonNum) return;
-
-        const tv = activeItem.detailedData;
+    async function generateOutputs() {
+        const mode = document.getElementById('pipelineMode').value;
         const outContainer = document.getElementById('outputContainer');
         outContainer.innerHTML = ''; 
+        
+        const mockTime = Math.floor(Date.now() / 1000);
+        const resolution = "1080p";
+        const variation = "1080p.SDR";
 
-        const seriesMeta = {
-            title: tv.name || "Unknown Series",
-            year: tv.first_air_date ? tv.first_air_date.substring(0, 4) : "",
-            rating: tv.vote_average ? parseFloat(tv.vote_average.toFixed(1)) : 0.0,
-            poster_url: tv.poster_path ? `${IMG_POSTER}${tv.poster_path}` : "",
-            backdrop_url: tv.backdrop_path ? `${IMG_BACKDROP}${tv.backdrop_path}` : "",
-            overview: tv.overview || ""
-        };
-        renderInteractiveJSON(`Series Master Profile (Season ${seasonNum})`, seriesMeta);
+        if (activeItem.media_type === 'movie') {
+            const title = activeItem.title || "Unknown Title";
+            const year = activeItem.release_date ? activeItem.release_date.substring(0, 4) : "";
+            const rating = activeItem.vote_average ? parseFloat(activeItem.vote_average.toFixed(1)) : 0.0;
+            const poster = activeItem.poster_path ? `${IMG_POSTER}${activeItem.poster_path}` : "";
+            const backdrop = activeItem.backdrop_path ? `${IMG_BACKDROP}${activeItem.backdrop_path}` : "";
+            const overview = activeItem.overview || "";
+            const safeDir = encodeURIComponent(`${title}.${year}.${variation}`);
 
-        const res = await fetch(`${API_BASE}/tv/${tv.id}/season/${seasonNum}?api_key=${key}`);
-        const seasonData = await res.json();
-
-        if (seasonData.episodes && seasonData.episodes.length > 0) {
-            seasonData.episodes.forEach(ep => {
-                const epMeta = {
-                    series_title: tv.name,
-                    season_number: ep.season_number,
-                    episode_number: ep.episode_number,
-                    episode_name: ep.name || `Episode ${ep.episode_number}`
+            if (mode === 'main3') {
+                const movieMeta = {
+                    id: activeItem.id,
+                    type: "movie",
+                    original_filename: "Mock.Movie.1080p.mkv",
+                    title: title,
+                    year: year,
+                    rating: rating,
+                    quality: resolution,
+                    duration: "2h 5m",
+                    IMAX: false,
+                    HDR: false,
+                    poster_url: poster,
+                    backdrop_url: backdrop,
+                    hls_manifest_url: `https://huggingface.co/buckets/{HF_BUCKET}/${safeDir}/master.m3u8`,
+                    overview: overview,
+                    available_audio: ["eng"],
+                    available_subs: ["eng"],
+                    date_added: mockTime
                 };
-                renderInteractiveJSON(`Episode ${ep.episode_number} Profile`, epMeta);
-            });
+                
+                const catalogMeta = {
+                    id: activeItem.id,
+                    type: "movie",
+                    title: title,
+                    year: year,
+                    date_added: mockTime,
+                    available_resolutions: [resolution],
+                    available_variations: [variation],
+                    hls_manifest_url: { [variation]: `https://huggingface.co/buckets/{HF_BUCKET}/${safeDir}/master.m3u8` },
+                    poster_url: poster
+                };
+
+                renderInteractiveJSON("metadata", "Movie Profile (metadata.json)", movieMeta);
+                renderInteractiveJSON("catalog", "Global Catalog Entry (global_catalog.json)", catalogMeta);
+            } 
+            else if (mode === 'main4') {
+                const movieMeta = {
+                    id: activeItem.id,
+                    type: "movie",
+                    title: title,
+                    movie_title: title,
+                    original_filename: "[MockSubs] Anime Movie (1080p).mkv",
+                    year: year,
+                    rating: rating,
+                    source: "WEB-DL",
+                    quality: resolution,
+                    duration: "1h 55m",
+                    size: "2.1 GB",
+                    HDR: false,
+                    available_audio: ["jpn", "eng"],
+                    ass_subtitles: [{ url: `https://huggingface.co/buckets/{HF_ANIME_BUCKET}/${safeDir}/subs_0_English.ass`, label: "English" }],
+                    fonts: [`https://huggingface.co/buckets/{HF_ANIME_BUCKET}/${safeDir}/fonts/default.woff2`],
+                    poster_url: poster,
+                    backdrop_url: backdrop,
+                    overview: overview,
+                    date_added: mockTime,
+                    hls_manifest_url: `https://huggingface.co/buckets/{HF_ANIME_BUCKET}/${safeDir}/master.m3u8`
+                };
+
+                const catalogMeta = {
+                    id: activeItem.id,
+                    type: "movie",
+                    title: title,
+                    year: year,
+                    available_resolutions: [resolution],
+                    available_variations: [variation],
+                    date_added: mockTime,
+                    metadata_url: { [variation]: `https://huggingface.co/buckets/{HF_ANIME_BUCKET}/${safeDir}/metadata.json` },
+                    poster_url: poster
+                };
+
+                renderInteractiveJSON("anime", "Anime Movie Profile (metadata.json)", movieMeta);
+                renderInteractiveJSON("catalog", "Global Catalog Entry (global_catalog.json)", catalogMeta);
+            }
+        } 
+        else if (activeItem.media_type === 'tv') {
+            const seasonNum = document.getElementById('seasonPicker').value;
+            if (!seasonNum) return;
+
+            const tv = activeItem.detailedData;
+            const title = tv.name || "Unknown Series";
+            const year = tv.first_air_date ? tv.first_air_date.substring(0, 4) : "";
+            const rating = tv.vote_average ? parseFloat(tv.vote_average.toFixed(1)) : 0.0;
+            const baseDirSafe = encodeURIComponent(title);
+            const epsDirSafe = encodeURIComponent(`${title}/Season.${seasonNum.padStart(2, '0')}/Episode.01`);
+            const mockManifest = `https://huggingface.co/buckets/{BUCKET_VAR}/${epsDirSafe}/master.m3u8`;
+
+            // Fetch season data to mock episodes correctly
+            const key = document.getElementById('apiKey').value.trim();
+            const res = await fetch(`${API_BASE}/tv/${tv.id}/season/${seasonNum}?api_key=${key}`);
+            const seasonData = await res.json();
+            
+            let poster = seasonData.poster_path ? `${IMG_POSTER}${seasonData.poster_path}` : (tv.poster_path ? `${IMG_POSTER}${tv.poster_path}` : "");
+            let overview = seasonData.overview || tv.overview || "";
+
+            let episodesList = [];
+            if (seasonData.episodes && seasonData.episodes.length > 0) {
+                seasonData.episodes.forEach(ep => {
+                    const epUrl = `https://huggingface.co/buckets/{BUCKET_VAR}/${encodeURIComponent(`${title}/Season.${seasonNum.padStart(2, '0')}/Episode.${String(ep.episode_number).padStart(2, '0')}`)}/master.m3u8`;
+                    episodesList.push({
+                        season_number: parseInt(seasonNum),
+                        episode_number: ep.episode_number,
+                        episode_name: ep.name || `Episode ${ep.episode_number}`,
+                        quality: resolution,
+                        date_added: mockTime,
+                        hls_manifest_url: epUrl
+                    });
+                });
+            } else {
+                episodesList.push({ season_number: parseInt(seasonNum), episode_number: 1, episode_name: "Episode 1", quality: resolution, date_added: mockTime, hls_manifest_url: mockManifest });
+            }
+
+            if (mode === 'main3') {
+                const masterMeta = {
+                    id: tv.id,
+                    type: "series",
+                    title: title,
+                    year: year,
+                    rating: rating,
+                    quality: resolution,
+                    duration: "45m",
+                    IMAX: false,
+                    HDR: false,
+                    poster_url: poster,
+                    backdrop_url: tv.backdrop_path ? `${IMG_BACKDROP}${tv.backdrop_path}` : "",
+                    overview: overview,
+                    date_added: mockTime,
+                    _total_secs: 2700,
+                    _ep_count: 1,
+                    episodes: episodesList
+                };
+                
+                const epOne = seasonData.episodes ? seasonData.episodes[0] : null;
+                const epName = epOne ? epOne.name : "Episode 1";
+
+                const episodeMeta = {
+                    id: tv.id,
+                    series_title: title,
+                    season_number: parseInt(seasonNum),
+                    episode_number: 1,
+                    episode_name: epName,
+                    original_filename: `Mock.Series.S${seasonNum.padStart(2, '0')}E01.1080p.mkv`,
+                    quality: resolution,
+                    duration: "45m",
+                    size: "1.2 GB",
+                    available_audio: ["eng"],
+                    available_subs: ["eng"],
+                    date_added: mockTime,
+                    hls_manifest_url: mockManifest.replace("{BUCKET_VAR}", "{HF_BUCKET}")
+                };
+
+                const catalogMeta = {
+                    id: tv.id,
+                    type: "series",
+                    title: title,
+                    year: year,
+                    quality: resolution,
+                    date_added: mockTime,
+                    series_metadata_url: `https://huggingface.co/buckets/{HF_BUCKET}/${baseDirSafe}/metadata.json`,
+                    poster_url: poster
+                };
+
+                renderInteractiveJSON("metadata", "Series Master Profile (Base metadata.json)", masterMeta);
+                renderInteractiveJSON("metadata", "Example Episode Profile (Episode 1 metadata.json)", episodeMeta);
+                renderInteractiveJSON("catalog", "Global Catalog Entry (global_catalog.json)", catalogMeta);
+            } 
+            else if (mode === 'main4') {
+                const masterMeta = {
+                    id: tv.id,
+                    type: "anime",
+                    title: title,
+                    year: year,
+                    rating: rating,
+                    source: "WEB-DL",
+                    quality: resolution,
+                    average_duration: "24m",
+                    HDR: false,
+                    poster_url: poster,
+                    backdrop_url: tv.backdrop_path ? `${IMG_BACKDROP}${tv.backdrop_path}` : "",
+                    overview: overview,
+                    date_added: mockTime,
+                    _total_secs: 1440,
+                    _ep_count: 1,
+                    episodes: episodesList.map(ep => ({...ep, hls_manifest_url: ep.hls_manifest_url.replace("{BUCKET_VAR}", "{HF_ANIME_BUCKET}")}))
+                };
+
+                const epOne = seasonData.episodes ? seasonData.episodes[0] : null;
+                const epName = epOne ? epOne.name : "Episode 1";
+
+                const episodeMeta = {
+                    id: tv.id,
+                    series_title: title,
+                    season_number: parseInt(seasonNum),
+                    episode_number: 1,
+                    episode_name: epName,
+                    original_filename: `[MockSubs] Anime Series - 01 (1080p).mkv`,
+                    quality: resolution,
+                    duration: "24m",
+                    size: "800 MB",
+                    available_audio: ["jpn", "eng"],
+                    ass_subtitles: [{ url: mockManifest.replace("{BUCKET_VAR}", "{HF_ANIME_BUCKET}").replace("master.m3u8", "subs_0_English.ass"), label: "English" }],
+                    fonts: [mockManifest.replace("{BUCKET_VAR}", "{HF_ANIME_BUCKET}").replace("master.m3u8", "fonts/default.woff2")],
+                    date_added: mockTime,
+                    hls_manifest_url: mockManifest.replace("{BUCKET_VAR}", "{HF_ANIME_BUCKET}")
+                };
+
+                const catalogMeta = {
+                    id: tv.id,
+                    type: "anime",
+                    title: title,
+                    year: year,
+                    date_added: mockTime,
+                    available_seasons: [seasonNum],
+                    season_sources: { [seasonNum]: "WEB-DL" },
+                    season_metadata_urls: { [seasonNum]: `https://huggingface.co/buckets/{HF_ANIME_BUCKET}/${baseDirSafe}/metadata.json` },
+                    poster_url: poster
+                };
+
+                renderInteractiveJSON("anime", "Anime Master Profile (Base metadata.json)", masterMeta);
+                renderInteractiveJSON("anime", "Example Episode Profile (Episode 1 metadata.json)", episodeMeta);
+                renderInteractiveJSON("catalog", "Global Catalog Entry (global_catalog.json)", catalogMeta);
+            }
         }
     }
 
-    function renderInteractiveJSON(label, data) {
+    function renderInteractiveJSON(typeClass, label, data) {
         const outContainer = document.getElementById('outputContainer');
         
         const wrapper = document.createElement('div');
         wrapper.className = 'json-wrapper';
         
         const header = document.createElement('div');
-        header.className = 'json-header';
-        header.innerText = label;
+        header.className = `json-header ${typeClass}`;
+        header.innerHTML = `<span>${label}</span> <span>📋 Formatted</span>`;
         
         const block = document.createElement('pre');
         block.className = 'json-block';
         
-        block.appendChild(document.createTextNode('{\n'));
+        const jsonString = JSON.stringify(data, null, 4);
         
-        const entries = Object.entries(data);
-        entries.forEach(([key, val], index) => {
-            const isLast = index === entries.length - 1;
+        // Basic Syntax Highlighting matching the Python JSON dump
+        let highlighted = jsonString
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                let cls = 'json-number';
+                if (/^"/.test(match)) {
+                    if (/:$/.test(match)) {
+                        cls = 'json-key';
+                        // Add copy button logic directly on hover or inline for keys if desired, keeping it clean for now
+                    } else {
+                        cls = 'json-string';
+                    }
+                } else if (/true|false/.test(match)) {
+                    cls = 'json-boolean';
+                }
+                return '<span class="' + cls + '">' + match + '</span>';
+            });
             
-            const lineSpan = document.createElement('span');
-            lineSpan.appendChild(document.createTextNode(`    "`));
-            
-            const keySpan = document.createElement('span');
-            keySpan.className = 'json-key';
-            keySpan.innerText = key;
-            lineSpan.appendChild(keySpan);
-            
-            lineSpan.appendChild(document.createTextNode(`": `));
-            
-            const valSpan = document.createElement('span');
-            const isString = typeof val === 'string';
-            valSpan.className = isString ? 'json-string' : 'json-number';
-            valSpan.innerText = isString ? `"${val}"` : val;
-            lineSpan.appendChild(valSpan);
-            
-            lineSpan.appendChild(document.createTextNode(isLast ? '' : ','));
-            
-            const copyBtn = document.createElement('button');
-            copyBtn.className = 'copy-inline-btn';
-            copyBtn.innerText = '📋';
-            copyBtn.title = 'Copy value (without quotes)';
-            copyBtn.onclick = () => {
-                navigator.clipboard.writeText(val).then(() => {
-                    copyBtn.innerText = '✅';
-                    setTimeout(() => { copyBtn.innerText = '📋'; }, 1500);
-                });
-            };
-            lineSpan.appendChild(copyBtn);
-            lineSpan.appendChild(document.createTextNode('\n'));
-            
-            block.appendChild(lineSpan);
-        });
-        
-        block.appendChild(document.createTextNode('}'));
+        block.innerHTML = highlighted;
         
         wrapper.appendChild(header);
         wrapper.appendChild(block);
